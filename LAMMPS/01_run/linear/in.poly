@@ -1,0 +1,66 @@
+# ---------------- Initialization ----------------
+units           lj
+atom_style      bond
+boundary        p p p
+
+variable        SEED equal 101
+
+read_data       data.lmp
+
+# ---------------- Interactions ----------------
+pair_style      lj/cut 1.12246
+pair_modify     shift yes
+pair_coeff      * * 1.0 1.0 1.12246
+
+bond_style      fene
+bond_coeff      1 30.0 1.5 1.0 1.0
+
+neighbor        0.3 bin
+neigh_modify    delay 0 every 1 check yes
+
+# ---------------- Dynamics ----------------
+velocity        all create 1.0 ${SEED} mom yes rot yes dist gaussian
+fix             TH all langevin 1.0 1.0 1.0 ${SEED}
+fix             NVE all nve
+
+# Compute radius of gyration
+compute         RG all gyration
+
+# Output basic thermo info including Rg^2
+thermo_style    custom step temp pe etotal c_RG
+thermo          1000
+
+# ---------------- Energy minimization ----------------
+min_style       cg
+minimize        1e-6 1e-8 10000 10000
+
+# ---------------- Soft start ----------------
+pair_style      lj/cut 2.5
+pair_coeff      * * 1.0 1.0 2.5
+run             10000
+
+# ---------------- Production ----------------
+pair_style      lj/cut 1.12246
+pair_modify     shift yes
+pair_coeff      * * 1.0 1.0 1.12246
+
+dump            D all custom 5000 traj.lammpstrj id type x y z
+dump_modify     D sort id
+
+# ---- Corrected print command ----
+# Define variables for printing step and gyration radius
+variable        s  equal step
+variable        rg equal c_RG
+
+# Print step and Rg^2 to rg2.dat every 5000 steps
+fix             OUT all print 5000 "${s} ${rg}" file rg2.dat screen no
+
+# Reset time and run production
+reset_timestep  0
+run             ${NSTEPS}
+
+# ---------------- Cleanup ----------------
+unfix           OUT
+unfix           TH
+undump          D
+write_restart   restart.final
